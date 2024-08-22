@@ -10,6 +10,10 @@ import os, yaml
 import time
 import argparse
 
+import numpy as np
+import matplotlib.pyplot as plt
+import torchvision.transforms as T
+
 def get_args():
     parser = argparse.ArgumentParser(description="Training Segmentation Network")
     parser.add_argument('--dataset', type=str, required=True, help='Path to the dataset folder')
@@ -161,6 +165,32 @@ def main():
 
     train_dataset = PolygonSegmentationDataset(train_image_dir, train_annotation_dir, use_cache=True, use_augmentation=False)
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers)
+
+    # Create an iterator over the DataLoader
+    data_iter = iter(train_dataloader)
+
+    # Fetch the first batch of images and masks
+    images, masks = next(data_iter)
+
+    # If you want to visualize a few images and masks
+    for i in range(min(len(images), 4)):  # Visualize the first 4 images
+        img = images[i].permute(1, 2, 0).numpy()  # Convert to HWC format
+        mask = masks[i].numpy()
+
+        # Reverse normalization if applied
+        img = (img * 255).astype(np.uint8)
+
+        # Plot the image and its corresponding mask
+        plt.figure(figsize=(10, 5))
+        plt.subplot(1, 2, 1)
+        plt.imshow(img)
+        plt.title("Image")
+
+        plt.subplot(1, 2, 2)
+        plt.imshow(mask, cmap="gray")
+        plt.title("Mask")
+
+        plt.show()
 
     validation_dataset = PolygonSegmentationDataset(validation_image_dir, validation_annotation_dir, use_cache=True, use_augmentation=False)
     validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
