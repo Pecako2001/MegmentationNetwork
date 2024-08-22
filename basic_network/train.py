@@ -16,7 +16,7 @@ def get_args():
     parser.add_argument('--workers', type=int, default=4, help='Number of data loading workers')
     parser.add_argument('--batch_size', type=int, default=12, help='Input batch size')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train')
-    parser.add_argument('--optimizer', type=str, default='adam', help='Optimizer to use: adam or sgd')
+    parser.add_argument('--optimizer', type=str, default='adam', help='Optimizer to use: adam, adamw or sgd')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate for the optimizer')
 
     return parser.parse_args()
@@ -125,7 +125,7 @@ def train_model(num_epochs, model, train_dataloader, validation_dataloader, crit
             torch.save(model.state_dict(), os.path.join(run_folder, 'best_model.pth'))
 
         # Save metrics to CSV
-        utils.save_training_results(run_folder, epoch+1, epoch_loss, validation_loss, avg_iou, avg_precision, avg_recall)
+        utils.save_training_results(run_folder, epoch+1, epoch_loss, validation_loss, avg_iou, avg_precision, avg_recall, optimizer.param_groups[0]['lr'])
 
         # Calculate total elapsed time and time remaining
         total_elapsed_time = time.time() - start_time
@@ -167,18 +167,23 @@ def main():
     run_folder = utils.find_next_run_folder()
 
     # Plot and save class distribution
-    utils.plot_class_distribution(train_dataset, run_folder)
+    utils.plot_class_distribution(train_dataset, run_folder, num_classes=len(class_names))
 
-    # Visualize and save a random grid of samples
-    utils.visualize_random_sample_grid(train_dataset, run_folder, grid_size=4)
+    # Visualize and save three random grids of samples at the start
+    for i in range(3):
+        utils.visualize_random_sample_grid(train_dataset, run_folder, grid_size=4, batch_num=i+1)
+
 
     model = BasicSegmentationModel(num_classes=len(class_names)).to(device)
     criterion = nn.CrossEntropyLoss()
 
+    # Optimzier
     if args.optimizer == 'adam':
         optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     elif args.optimizer == 'sgd':
         optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=0.9)
+    elif args.optimizer == 'adamw':
+        optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)
 
     num_epochs = args.epochs
 

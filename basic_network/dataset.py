@@ -7,14 +7,17 @@ import pickle
 from tqdm import tqdm
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+import random
 
 class PolygonSegmentationDataset(Dataset):
-    def __init__(self, image_dir, annotation_dir, transform=None, target_size=(320, 240), use_cache=True, use_augmentation=True):
+    def __init__(self, image_dir, annotation_dir, transform=None, target_size=(320, 240), use_cache=True, use_augmentation=True, augmentation_probability=0.02):
         self.image_dir = image_dir
         self.annotation_dir = annotation_dir
         self.transform = transform
         self.target_size = target_size
         self.use_cache = use_cache
+        self.use_augmentation = use_augmentation
+        self.augmentation_probability = augmentation_probability
         self.cache_file = os.path.join(image_dir, 'dataset_cache.pkl')
 
         if self.use_cache and os.path.exists(self.cache_file):
@@ -31,23 +34,37 @@ class PolygonSegmentationDataset(Dataset):
         # Define default transformations based on the use_augmentation flag
         if transform is None:
             if use_augmentation:
-                self.transform = A.Compose([
-                    A.SmallestMaxSize(max_size=min(self.target_size)),  # Resize smaller side to target size
-                    A.PadIfNeeded(min_height=self.target_size[1], min_width=self.target_size[0], border_mode=cv2.BORDER_CONSTANT, value=0),  # Pad to target size
-                    A.HorizontalFlip(p=0.5),
-                    A.VerticalFlip(p=0.5),
-                    A.RandomRotate90(p=0.5),
-                    A.RandomBrightnessContrast(p=0.2),
+                self.augmentation_transform = A.Compose([
+                    A.OneOf([
+                        A.HorizontalFlip(p=1.0),
+                        A.VerticalFlip(p=1.0),
+                        A.RandomRotate90(p=1.0),
+                    ], p=1.0),
+                    A.OneOf([
+                        A.Blur(p=0.05),
+                        A.GaussianBlur(p=0.05),
+                        A.MedianBlur(blur_limit=5, p=0.05),
+                    ], p=1.0),
+                    A.OneOf([
+                        A.RandomBrightnessContrast(p=0.05),
+                        A.CLAHE(p=0.05),
+                        A.RGBShift(p=0.05),
+                    ], p=1.0),
+                    A.OneOf([
+                        A.ChannelShuffle(p=0.05),
+                        A.HueSaturationValue(p=0.05),
+                        A.ToGray(p=0.05),
+                    ], p=1.0),
+                    A.Resize(height=self.target_size[1], width=self.target_size[0]),  # Ensure final size is consistent
                     A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
                     ToTensorV2()
-                ])
-            else:
-                self.transform = A.Compose([
-                    A.SmallestMaxSize(max_size=min(self.target_size)),  # Resize smaller side to target size
-                    A.PadIfNeeded(min_height=self.target_size[1], min_width=self.target_size[0], border_mode=cv2.BORDER_CONSTANT, value=0),  # Pad to target size
-                    A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-                    ToTensorV2()
-                ])
+                ], additional_targets={'mask': 'mask'})
+            
+            self.normal_transform = A.Compose([
+                A.Resize(height=self.target_size[1], width=self.target_size[0]),  # Ensure consistent size without augmentation
+                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                ToTensorV2()
+            ], additional_targets={'mask': 'mask'})
 
     def _load_and_cache_data(self):
         image_filenames = [f for f in os.listdir(self.image_dir) if f.endswith('.jpg') or f.endswith('.png')]
@@ -87,10 +104,6 @@ class PolygonSegmentationDataset(Dataset):
                 polygon_points = polygon_points.astype(np.int32)  # Convert to integer
                 cv2.fillPoly(mask, [polygon_points], class_idx)
 
-        # Resize image and mask to the target size
-        image = cv2.resize(image, self.target_size)
-        mask = cv2.resize(mask, self.target_size, interpolation=cv2.INTER_NEAREST)
-
         return image, mask
 
     def __len__(self):
@@ -100,9 +113,31 @@ class PolygonSegmentationDataset(Dataset):
         image_path, annotation = self.annotations[idx]
         image, mask = self._load_image_and_mask(image_path, annotation)
 
-        if self.transform:
-            augmented = self.transform(image=image, mask=mask)
-            image = augmented['image']
-            mask = augmented['mask']
+        #original_image = image.copy()
+
+        # Randomly decide whether to apply augmentation
+        if self.use_augmentation and random.random() < self.augmentation_probability:
+            augmented = self.augmentation_transform(image=image, mask=mask)
+            #print(f"Augmented: {image_path}")
+
+            # Convert augmented image and mask back to NumPy for saving
+            # augmented_image_np = augmented['image'].permute(1, 2, 0).cpu().numpy()
+            # augmented_image_np = (augmented_image_np * np.array([0.229, 0.224, 0.225]) + np.array([0.485, 0.456, 0.406])) * 255.0
+            # augmented_image_np = augmented_image_np.astype(np.uint8)
+
+            # # Convert original image to match size and type
+            # original_image_np = cv2.resize(original_image, (self.target_size[0], self.target_size[1]))
+            # original_image_np = cv2.cvtColor(original_image_np, cv2.COLOR_RGB2BGR)
+
+            # # Concatenate original and augmented images
+            # comparison_image = np.concatenate((original_image_np, cv2.cvtColor(augmented_image_np, cv2.COLOR_RGB2BGR)), axis=1)
+            # save_path = f'comparison_{os.path.basename(image_path)}'
+            # cv2.imwrite(save_path, comparison_image)
+            # print(f"Saved comparison image to: {save_path}")
+        else:
+            augmented = self.normal_transform(image=image, mask=mask)
+        
+        image = augmented['image']
+        mask = augmented['mask']
 
         return image.float() / 255.0, mask.long()  # Normalize image to [0, 1] and ensure mask is a long tensor

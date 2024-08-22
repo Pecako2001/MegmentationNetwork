@@ -102,15 +102,12 @@ def visualize_dataset_sample(dataset, run_folder, idx=0):
     cv2.imwrite(os.path.join(run_folder, 'sample_image.jpg'), cv2.cvtColor((image * 255).astype(np.uint8), cv2.COLOR_RGB2BGR))
 
 def plot_class_distribution(dataset, run_folder, num_classes=23):
-    print(f"Plotting class distribution for {len(dataset)} samples")
     class_counts = np.zeros(num_classes, dtype=int)
 
-    for _, mask in tqdm(dataset, desc="Processing Masks", unit="mask"):
-        # Vectorized count of unique classes in the mask
-        unique, counts = np.unique(mask, return_counts=True)
-        for u, c in zip(unique, counts):
-            if u < num_classes:  # Make sure class index is within expected range
-                class_counts[u] += c
+    for _, mask in tqdm(dataset, desc="Processing masks", unit="mask"):
+        for i in range(num_classes):
+            _, num_features = label(mask == i)
+            class_counts[i] += num_features  # Count contiguous regions (instances)
 
     plt.figure(figsize=(12, 8))
 
@@ -123,7 +120,7 @@ def plot_class_distribution(dataset, run_folder, num_classes=23):
     plt.ticklabel_format(style='plain', axis='y')
 
     plt.xlabel('Class')
-    plt.ylabel('Number of Pixels')
+    plt.ylabel('Number of Instances')
     plt.title('Class Distribution in Dataset')
 
     # Add text on top of each bar
@@ -138,7 +135,7 @@ def plot_class_distribution(dataset, run_folder, num_classes=23):
 
     print(f"Class distribution saved to {save_path}")
 
-def visualize_random_sample_grid(dataset, run_folder, grid_size=4):
+def visualize_random_sample_grid(dataset, run_folder, grid_size=4, batch_num=1):
     indices = np.random.choice(len(dataset), grid_size * grid_size, replace=False)
     images, masks = [], []
 
@@ -172,6 +169,6 @@ def visualize_random_sample_grid(dataset, run_folder, grid_size=4):
         col = i % grid_size
         grid_image[row * img_height:(row + 1) * img_height, col * img_width:(col + 1) * img_width] = combined_img
 
-    save_path = os.path.join(run_folder, 'random_sample_grid.jpg')
+    save_path = os.path.join(run_folder, f'random_sample_grid_batch_{batch_num}.jpg')
     cv2.imwrite(save_path, grid_image)
     print(f"Saved random sample grid to {save_path}")
