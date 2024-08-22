@@ -3,9 +3,9 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.cuda.amp import GradScaler, autocast
 from torchmetrics import JaccardIndex, Precision, Recall
-from dataset import PolygonSegmentationDataset
-from model import BasicSegmentationModel
-import utils as utils
+from megmentation.dataset import PolygonSegmentationDataset
+from megmentation.model import BasicSegmentationModel
+import megmentation.utils as utils
 import os, yaml
 import time
 import argparse

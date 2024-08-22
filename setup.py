@@ -23,7 +23,8 @@ setup(
     python_requires='>=3.10',  
     entry_points={
         'console_scripts': [
-            'megmentation=basic_network.train:main', 
+            'megmentation=megmentation.train:main', 
+            'megmentation-val=megmentation.val:main', 
         ],
     },
 )
