@@ -6,8 +6,28 @@ from torchmetrics import JaccardIndex, Precision, Recall
 from dataset import PolygonSegmentationDataset
 from model import BasicSegmentationModel
 import utils as utils
-import os
+import os, yaml
 import time
+import argparse
+
+def get_args():
+    parser = argparse.ArgumentParser(description="Training Segmentation Network")
+    parser.add_argument('--dataset', type=str, required=True, help='Path to the dataset folder')
+    parser.add_argument('--workers', type=int, default=4, help='Number of data loading workers')
+    parser.add_argument('--batch_size', type=int, default=12, help='Input batch size')
+    parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train')
+    parser.add_argument('--optimizer', type=str, default='adam', help='Optimizer to use: adam or sgd')
+    parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate for the optimizer')
+
+    return parser.parse_args()
+
+def load_yaml_config(yaml_file):
+    with open(yaml_file, 'r') as stream:
+        try:
+            return yaml.safe_load(stream)
+        except yaml.YAMLError as exc:
+            print(exc)
+
 
 def validate_model(model, dataloader, criterion, device, run_folder, epoch=0):
     model.eval()
@@ -121,19 +141,28 @@ def train_model(num_epochs, model, train_dataloader, validation_dataloader, crit
     torch.save(model.state_dict(), os.path.join(run_folder, 'last_model.pth'))
     utils.plot_training_results(run_folder)
 
-if __name__ == "__main__":
+def main():
+    args = get_args()
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    image_dir = 'basic_network/dataset/train/images'
-    annotation_dir = 'basic_network/dataset/train/labels'
-    validation_image_dir = 'basic_network/dataset/valid/images'
-    validation_annotation_dir = 'basic_network/dataset/valid/labels'
+    # Load data from data.yaml
+    yaml_path = os.path.join(args.dataset, 'data.yaml')
+    config = load_yaml_config(yaml_path)
 
-    train_dataset = PolygonSegmentationDataset(image_dir, annotation_dir, use_cache=True)
-    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=12, shuffle=True, num_workers=4)
+    train_image_dir = os.path.join(args.dataset, config['train'])
+    train_annotation_dir = os.path.join(args.dataset, 'train/labels')
+    validation_image_dir = os.path.join(args.dataset, config['val'])
+    validation_annotation_dir = os.path.join(args.dataset, 'valid/labels')
+    #test_image_dir = os.path.join(args.dataset, config['test'])
+    #test_annotation_dir = os.path.join(args.dataset, 'test/labels')
+    class_names = config['names']
 
-    validation_dataset = PolygonSegmentationDataset(validation_image_dir, validation_annotation_dir, use_cache=True)
-    validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size=12, shuffle=False, num_workers=4)
+    train_dataset = PolygonSegmentationDataset(train_image_dir, train_annotation_dir, use_cache=True, use_augmentation=True)
+    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers)
+
+    validation_dataset = PolygonSegmentationDataset(validation_image_dir, validation_annotation_dir, use_cache=True, use_augmentation=False)
+    validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
 
     run_folder = utils.find_next_run_folder()
 
@@ -143,10 +172,17 @@ if __name__ == "__main__":
     # Visualize and save a random grid of samples
     utils.visualize_random_sample_grid(train_dataset, run_folder, grid_size=4)
 
-    model = BasicSegmentationModel(num_classes=23).to(device)
+    model = BasicSegmentationModel(num_classes=len(class_names)).to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-    num_epochs = 101
+    if args.optimizer == 'adam':
+        optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+    elif args.optimizer == 'sgd':
+        optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=0.9)
+
+    num_epochs = args.epochs
 
     train_model(num_epochs, model, train_dataloader, validation_dataloader, criterion, optimizer, device, run_folder)
+
+if __name__ == "__main__":
+    main()

@@ -5,9 +5,11 @@ from torch.utils.data import Dataset
 import numpy as np
 import pickle
 from tqdm import tqdm
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 
 class PolygonSegmentationDataset(Dataset):
-    def __init__(self, image_dir, annotation_dir, transform=None, target_size=(320, 240), use_cache=True):
+    def __init__(self, image_dir, annotation_dir, transform=None, target_size=(320, 240), use_cache=True, use_augmentation=True):
         self.image_dir = image_dir
         self.annotation_dir = annotation_dir
         self.transform = transform
@@ -25,6 +27,27 @@ class PolygonSegmentationDataset(Dataset):
                 with open(self.cache_file, 'wb') as f:
                     pickle.dump((self.image_filenames, self.annotations), f)
                 print(f"Dataset cached at: {self.cache_file}")
+
+        # Define default transformations based on the use_augmentation flag
+        if transform is None:
+            if use_augmentation:
+                self.transform = A.Compose([
+                    A.SmallestMaxSize(max_size=min(self.target_size)),  # Resize smaller side to target size
+                    A.PadIfNeeded(min_height=self.target_size[1], min_width=self.target_size[0], border_mode=cv2.BORDER_CONSTANT, value=0),  # Pad to target size
+                    A.HorizontalFlip(p=0.5),
+                    A.VerticalFlip(p=0.5),
+                    A.RandomRotate90(p=0.5),
+                    A.RandomBrightnessContrast(p=0.2),
+                    A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                    ToTensorV2()
+                ])
+            else:
+                self.transform = A.Compose([
+                    A.SmallestMaxSize(max_size=min(self.target_size)),  # Resize smaller side to target size
+                    A.PadIfNeeded(min_height=self.target_size[1], min_width=self.target_size[0], border_mode=cv2.BORDER_CONSTANT, value=0),  # Pad to target size
+                    A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                    ToTensorV2()
+                ])
 
     def _load_and_cache_data(self):
         image_filenames = [f for f in os.listdir(self.image_dir) if f.endswith('.jpg') or f.endswith('.png')]
@@ -64,6 +87,7 @@ class PolygonSegmentationDataset(Dataset):
                 polygon_points = polygon_points.astype(np.int32)  # Convert to integer
                 cv2.fillPoly(mask, [polygon_points], class_idx)
 
+        # Resize image and mask to the target size
         image = cv2.resize(image, self.target_size)
         mask = cv2.resize(mask, self.target_size, interpolation=cv2.INTER_NEAREST)
 
@@ -81,7 +105,4 @@ class PolygonSegmentationDataset(Dataset):
             image = augmented['image']
             mask = augmented['mask']
 
-        image = torch.from_numpy(image).permute(2, 0, 1).float() / 255.0  # Normalize to [0, 1]
-        mask = torch.from_numpy(mask).long()
-
-        return image, mask
+        return image.float() / 255.0, mask.long()  # Normalize image to [0, 1] and ensure mask is a long tensor

@@ -5,6 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import random
+from tqdm import tqdm
+from scipy.ndimage import label
 
 def find_next_run_folder(base_dir='runs', prefix='train'):
     os.makedirs(base_dir, exist_ok=True)
@@ -30,15 +32,13 @@ def save_annotated_images(images, masks, predictions, save_dir='runs', epoch=0):
         img = images[i].astype(np.uint8)
 
         # Safeguard against division by zero
-        mask_max = masks[i].max()
-        if mask_max > 0:
-            mask = (masks[i] * 255 / mask_max).astype(np.uint8)
+        if masks[i].max() > 0:
+            mask = (masks[i] * 255 / masks[i].max()).astype(np.uint8)
         else:
             mask = np.zeros_like(masks[i], dtype=np.uint8)
 
-        pred_max = predictions[i].max()
-        if pred_max > 0:
-            pred = (predictions[i] * 255 / pred_max).astype(np.uint8)
+        if predictions[i].max() > 0:
+            pred = (predictions[i] * 255 / predictions[i].max()).astype(np.uint8)
         else:
             pred = np.zeros_like(predictions[i], dtype=np.uint8)
 
@@ -58,7 +58,7 @@ def save_annotated_images(images, masks, predictions, save_dir='runs', epoch=0):
     cv2.imwrite(save_path, grid_image)
     print(f"Saved annotated image grid to {save_path}")
 
-def save_training_results(run_folder, epoch, epoch_loss, validation_loss, avg_iou, avg_precision, avg_recall):
+def save_training_results(run_folder, epoch, epoch_loss, validation_loss, avg_iou, avg_precision, avg_recall, learning_rate):
     csv_path = os.path.join(run_folder, 'results.csv')
     new_row = {
         'epoch': epoch,
@@ -66,16 +66,17 @@ def save_training_results(run_folder, epoch, epoch_loss, validation_loss, avg_io
         'validation_loss': validation_loss,
         'avg_iou': avg_iou,
         'avg_precision': avg_precision,
-        'avg_recall': avg_recall
+        'avg_recall': avg_recall,
+        'learning_rate': learning_rate
     }
     if not os.path.exists(csv_path):
         df = pd.DataFrame(columns=new_row.keys())
     else:
         df = pd.read_csv(csv_path)
 
-    # Use pd.concat instead of append
     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
     df.to_csv(csv_path, index=False)
+
 
 def plot_training_results(run_folder):
     csv_path = os.path.join(run_folder, 'results.csv')
@@ -104,20 +105,25 @@ def plot_class_distribution(dataset, run_folder, num_classes=23):
     print(f"Plotting class distribution for {len(dataset)} samples")
     class_counts = np.zeros(num_classes, dtype=int)
 
-    for _, mask in dataset:
-        for i in range(num_classes):
-            class_counts[i] += torch.sum(mask == i).item()
+    for _, mask in tqdm(dataset, desc="Processing Masks", unit="mask"):
+        # Vectorized count of unique classes in the mask
+        unique, counts = np.unique(mask, return_counts=True)
+        for u, c in zip(unique, counts):
+            if u < num_classes:  # Make sure class index is within expected range
+                class_counts[u] += c
 
     plt.figure(figsize=(12, 8))
 
     # Generate a color for each bar
     colors = plt.cm.get_cmap('tab20', num_classes).colors
+
     bars = plt.bar(range(num_classes), class_counts, color=colors)
 
     # No scientific notation
     plt.ticklabel_format(style='plain', axis='y')
+
     plt.xlabel('Class')
-    plt.ylabel('Number of Instances')
+    plt.ylabel('Number of Pixels')
     plt.title('Class Distribution in Dataset')
 
     # Add text on top of each bar
@@ -125,14 +131,30 @@ def plot_class_distribution(dataset, run_folder, num_classes=23):
         yval = bar.get_height()
         plt.text(bar.get_x() + bar.get_width()/2, yval, f'{count}', ha='center', va='bottom', rotation=90)
 
-    # Save the figure
+    # Save the figure without displaying it
     save_path = os.path.join(run_folder, 'classes.jpg')
     plt.savefig(save_path)
     plt.close()
 
+    print(f"Class distribution saved to {save_path}")
+
 def visualize_random_sample_grid(dataset, run_folder, grid_size=4):
-    indices = random.sample(range(len(dataset)), grid_size * grid_size)
-    images, masks = zip(*[dataset[i] for i in indices])
+    indices = np.random.choice(len(dataset), grid_size * grid_size, replace=False)
+    images, masks = [], []
+
+    target_size = (320, 240)  # Define your consistent target size
+
+    for i in indices:
+        image, mask = dataset[i]
+
+        # Resize the image to the target size
+        image = torch.nn.functional.interpolate(image.unsqueeze(0), size=target_size, mode='bilinear', align_corners=False).squeeze(0)
+        
+        # Resize the mask to the target size (convert to float before interpolation)
+        mask = torch.nn.functional.interpolate(mask.unsqueeze(0).unsqueeze(0).float(), size=target_size, mode='nearest').long().squeeze(0).squeeze(0)
+
+        images.append(image)
+        masks.append(mask)
 
     images = torch.stack(images).permute(0, 2, 3, 1).numpy() * 255
     masks = torch.stack(masks).numpy()
