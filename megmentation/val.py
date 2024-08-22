@@ -20,8 +20,8 @@ def main():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    image_dir = os.path.join(args.dataset, 'images')
-    annotation_dir = os.path.join(args.dataset, 'labels')
+    image_dir = os.path.join(args.dataset, 'valid/images')
+    annotation_dir = os.path.join(args.dataset, 'valid/labels')
     
     val_dataset = PolygonSegmentationDataset(image_dir, annotation_dir, use_cache=True)
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
@@ -45,6 +45,9 @@ def main():
             images = images.to(device).float()
             masks = masks.to(device).long()
 
+            # Save input images and masks before feeding them to the model
+            #utils.save_input_images(images.cpu(), masks.cpu(), save_dir=run_folder, batch_idx=batch_idx)
+    
             outputs = model(images)
             loss = criterion(outputs, masks)
 
@@ -53,7 +56,8 @@ def main():
             precision.update(predictions, masks)
 
             # Calculate IOU for each class and update class-wise IOU and counts
-            for i in range(args.batch_size):
+            batch_size = masks.size(0)
+            for i in range(batch_size):
                 mask = masks[i].cpu().numpy()
                 pred = predictions[i].cpu().numpy()
 
@@ -71,6 +75,7 @@ def main():
 
             # Print current metrics
             print(f'\rBatch [{batch_idx+1}/{len(val_dataloader)}] - IOU: {mean_iou.compute().item():.4f} - Precision: {precision.compute().item():.4f}', end='')
+
 
     # Calculate final IOU per class
     class_ious /= (class_counts + 1e-10)  # Prevent division by zero

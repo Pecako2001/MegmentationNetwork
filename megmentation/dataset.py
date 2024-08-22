@@ -120,7 +120,7 @@ class PolygonSegmentationDataset(Dataset):
             augmented = self.augmentation_transform(image=image, mask=mask)
             #print(f"Augmented: {image_path}")
 
-            # Convert augmented image and mask back to NumPy for saving
+            # #Convert augmented image and mask back to NumPy for saving
             # augmented_image_np = augmented['image'].permute(1, 2, 0).cpu().numpy()
             # augmented_image_np = (augmented_image_np * np.array([0.229, 0.224, 0.225]) + np.array([0.485, 0.456, 0.406])) * 255.0
             # augmented_image_np = augmented_image_np.astype(np.uint8)
@@ -133,7 +133,7 @@ class PolygonSegmentationDataset(Dataset):
             # comparison_image = np.concatenate((original_image_np, cv2.cvtColor(augmented_image_np, cv2.COLOR_RGB2BGR)), axis=1)
             # save_path = f'comparison_{os.path.basename(image_path)}'
             # cv2.imwrite(save_path, comparison_image)
-            # print(f"Saved comparison image to: {save_path}")
+            #print(f"Saved comparison image to: {save_path}")
         else:
             augmented = self.normal_transform(image=image, mask=mask)
         

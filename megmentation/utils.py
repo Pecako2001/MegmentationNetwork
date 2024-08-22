@@ -19,6 +19,7 @@ def save_annotated_images(images, masks, predictions, save_dir='runs', epoch=0):
     os.makedirs(save_dir, exist_ok=True)
     
     images = images.permute(0, 2, 3, 1).numpy() * 255  # Convert to [0, 255] range
+    images = images.astype(np.uint8)
     masks = masks.numpy()
     predictions = predictions.numpy()
 
@@ -27,33 +28,41 @@ def save_annotated_images(images, masks, predictions, save_dir='runs', epoch=0):
     grid_width = grid_size
     img_height, img_width, _ = images[0].shape
     grid_image = np.zeros((img_height * grid_height, img_width * grid_width, 3), dtype=np.uint8)
+    original_grid_image = np.zeros((img_height * grid_height, img_width * grid_width, 3), dtype=np.uint8)
 
     for i in range(min(images.shape[0], grid_size * grid_size)):
-        img = images[i].astype(np.uint8)
+        img = images[i]
 
-        # Safeguard against division by zero
+        # Place original image in the grid for comparison
+        row = i // grid_width
+        col = i % grid_width
+        original_grid_image[row * img_height:(row + 1) * img_height, col * img_width:(col + 1) * img_width] = img
+
+        # Apply color map to the mask (ensure masks are valid)
         if masks[i].max() > 0:
             mask = (masks[i] * 255 / masks[i].max()).astype(np.uint8)
+            mask = cv2.applyColorMap(mask, cv2.COLORMAP_JET)
         else:
-            mask = np.zeros_like(masks[i], dtype=np.uint8)
+            mask = np.zeros_like(img, dtype=np.uint8)
 
         if predictions[i].max() > 0:
             pred = (predictions[i] * 255 / predictions[i].max()).astype(np.uint8)
+            pred = cv2.applyColorMap(pred, cv2.COLORMAP_JET)
         else:
-            pred = np.zeros_like(predictions[i], dtype=np.uint8)
+            pred = np.zeros_like(img, dtype=np.uint8)
 
-        # Ensure the images are in the right format for applyColorMap
-        mask = cv2.applyColorMap(mask, cv2.COLORMAP_JET)
-        pred = cv2.applyColorMap(pred, cv2.COLORMAP_JET)
-
-        # Combine original image with mask overlay
-        combined_img = cv2.addWeighted(img, 0.6, pred, 0.4, 0)
+        # Overlay prediction on the original image
+        combined_img = cv2.addWeighted(img, 0.7, pred, 0.3, 0)
 
         # Place combined image in the grid
-        row = i // grid_width
-        col = i % grid_width
         grid_image[row * img_height:(row + 1) * img_height, col * img_width:(col + 1) * img_width] = combined_img
 
+    # Save the original images grid
+    original_save_path = os.path.join(save_dir, f'original_Epoch_{epoch}.png')
+    cv2.imwrite(original_save_path, original_grid_image)
+    print(f"Saved original image grid to {original_save_path}")
+
+    # Save the annotated images grid
     save_path = os.path.join(save_dir, f'validation_Epoch_{epoch}.png')
     cv2.imwrite(save_path, grid_image)
     print(f"Saved annotated image grid to {save_path}")
@@ -172,3 +181,50 @@ def visualize_random_sample_grid(dataset, run_folder, grid_size=4, batch_num=1):
     save_path = os.path.join(run_folder, f'random_sample_grid_batch_{batch_num}.jpg')
     cv2.imwrite(save_path, grid_image)
     print(f"Saved random sample grid to {save_path}")
+
+def save_input_images(images, masks, save_dir, batch_idx):
+    os.makedirs(save_dir, exist_ok=True)
+    images = images.permute(0, 2, 3, 1).cpu().numpy() * 255  # Convert to [0, 255] range
+    images = images.astype(np.uint8)
+    masks = masks.cpu().numpy()
+
+    grid_size = 4
+    grid_height = grid_size
+    grid_width = grid_size
+    img_height, img_width, _ = images[0].shape
+    grid_image = np.zeros((img_height * grid_height, img_width * grid_width, 3), dtype=np.uint8)
+    mask_grid_image = np.zeros((img_height * grid_height, img_width * grid_width, 3), dtype=np.uint8)
+
+    for i in range(min(images.shape[0], grid_size * grid_size)):
+        img = images[i].astype(np.uint8)
+        mask = masks[i]
+
+        row = i // grid_width
+        col = i % grid_width
+
+        # Place original image in the grid
+        grid_image[row * img_height:(row + 1) * img_height, col * img_width:(col + 1) * img_width] = img
+
+        # Convert mask to single-channel 8-bit format for applyColorMap
+        if mask.max() > 0:
+            mask = (mask * 255 / mask.max()).astype(np.uint8)
+        else:
+            mask = np.zeros_like(mask, dtype=np.uint8)
+
+        # Ensure the mask is a 2D single-channel image
+        if len(mask.shape) == 3 and mask.shape[2] == 1:
+            mask = mask.squeeze(axis=2)
+
+        # Apply color map to the mask
+        mask = cv2.applyColorMap(mask, cv2.COLORMAP_JET)
+        mask_grid_image[row * img_height:(row + 1) * img_height, col * img_width:(col + 1) * img_width] = mask
+
+    # Save the original images grid
+    original_save_path = os.path.join(save_dir, f'input_images_batch_{batch_idx}.png')
+    cv2.imwrite(original_save_path, grid_image)
+    print(f"Saved input images grid to {original_save_path}")
+
+    # Save the masks grid
+    mask_save_path = os.path.join(save_dir, f'input_masks_batch_{batch_idx}.png')
+    cv2.imwrite(mask_save_path, mask_grid_image)
+    print(f"Saved input masks grid to {mask_save_path}")

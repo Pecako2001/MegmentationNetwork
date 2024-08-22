@@ -84,6 +84,7 @@ def train_model(num_epochs, model, train_dataloader, validation_dataloader, crit
             images = images.to(device).float()
             masks = masks.to(device).long()
             
+            #utils.save_input_images(images.cpu(), masks.cpu(), save_dir=run_folder, batch_idx=batch_idx)
             optimizer.zero_grad()
             
             with autocast():
@@ -158,7 +159,7 @@ def main():
     #test_annotation_dir = os.path.join(args.dataset, 'test/labels')
     class_names = config['names']
 
-    train_dataset = PolygonSegmentationDataset(train_image_dir, train_annotation_dir, use_cache=True, use_augmentation=True)
+    train_dataset = PolygonSegmentationDataset(train_image_dir, train_annotation_dir, use_cache=True, use_augmentation=False)
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers)
 
     validation_dataset = PolygonSegmentationDataset(validation_image_dir, validation_annotation_dir, use_cache=True, use_augmentation=False)
@@ -167,7 +168,7 @@ def main():
     run_folder = utils.find_next_run_folder()
 
     # Plot and save class distribution
-    utils.plot_class_distribution(train_dataset, run_folder, num_classes=len(class_names))
+    #utils.plot_class_distribution(train_dataset, run_folder, num_classes=len(class_names))
 
     # Visualize and save three random grids of samples at the start
     for i in range(3):
