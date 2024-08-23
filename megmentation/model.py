@@ -1,42 +1,36 @@
 import torch.nn as nn
 import torch
+import torchvision.models as models
 
-class BasicSegmentationModel(nn.Module):
+class TransferLearningSegmentationModel(nn.Module):
     def __init__(self, num_classes):
-        super(BasicSegmentationModel, self).__init__()
+        super(TransferLearningSegmentationModel, self).__init__()
 
+        # Load a pre-trained ResNet model and remove the fully connected layer
+        resnet = models.resnet34(pretrained=True)
         self.encoder1 = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(64, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True)
+            resnet.conv1,
+            resnet.bn1,
+            resnet.relu,
+            resnet.maxpool,
+            resnet.layer1
         )
-        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
-
-        self.encoder2 = nn.Sequential(
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(128, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True)
-        )
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-
-        self.encoder3 = nn.Sequential(
-            nn.Conv2d(128, 256, kernel_size=3, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(256, 256, kernel_size=3, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True)
-        )
-        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
-
+        self.encoder2 = resnet.layer2
+        self.encoder3 = resnet.layer3
+        self.encoder4 = resnet.layer4
+        
         self.bottleneck = nn.Sequential(
-            nn.Conv2d(256, 512, kernel_size=3, padding=1),
+            nn.Conv2d(512, 1024, kernel_size=3, padding=1),
+            nn.BatchNorm2d(1024),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(1024, 1024, kernel_size=3, padding=1),
+            nn.BatchNorm2d(1024),
+            nn.ReLU(inplace=True)
+        )
+
+        self.upconv3 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
+        self.decoder3 = nn.Sequential(
+            nn.Conv2d(1024, 512, kernel_size=3, padding=1),
             nn.BatchNorm2d(512),
             nn.ReLU(inplace=True),
             nn.Conv2d(512, 512, kernel_size=3, padding=1),
@@ -44,8 +38,8 @@ class BasicSegmentationModel(nn.Module):
             nn.ReLU(inplace=True)
         )
 
-        self.upconv3 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
-        self.decoder3 = nn.Sequential(
+        self.upconv2 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
+        self.decoder2 = nn.Sequential(
             nn.Conv2d(512, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
             nn.ReLU(inplace=True),
@@ -54,8 +48,8 @@ class BasicSegmentationModel(nn.Module):
             nn.ReLU(inplace=True)
         )
 
-        self.upconv2 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
-        self.decoder2 = nn.Sequential(
+        self.upconv1 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
+        self.decoder1 = nn.Sequential(
             nn.Conv2d(256, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
@@ -64,8 +58,8 @@ class BasicSegmentationModel(nn.Module):
             nn.ReLU(inplace=True)
         )
 
-        self.upconv1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
-        self.decoder1 = nn.Sequential(
+        self.upconv0 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
+        self.decoder0 = nn.Sequential(
             nn.Conv2d(128, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
@@ -78,23 +72,35 @@ class BasicSegmentationModel(nn.Module):
 
     def forward(self, x):
         e1 = self.encoder1(x)
-        p1 = self.pool1(e1)
-        e2 = self.encoder2(p1)
-        p2 = self.pool2(e2)
-        e3 = self.encoder3(p2)
-        p3 = self.pool3(e3)
+        e2 = self.encoder2(e1)
+        e3 = self.encoder3(e2)
+        e4 = self.encoder4(e3)
 
-        b = self.bottleneck(p3)
+        b = self.bottleneck(e4)
 
         u3 = self.upconv3(b)
-        d3 = torch.cat((u3, e3), dim=1)
+        e4_upsampled = nn.functional.interpolate(e4, size=(u3.size(2), u3.size(3)), mode='bilinear', align_corners=True)
+        d3 = torch.cat((u3, e4_upsampled), dim=1)
         d3 = self.decoder3(d3)
+        
         u2 = self.upconv2(d3)
-        d2 = torch.cat((u2, e2), dim=1)
+        e3_upsampled = nn.functional.interpolate(e3, size=(u2.size(2), u2.size(3)), mode='bilinear', align_corners=True)
+        d2 = torch.cat((u2, e3_upsampled), dim=1)
         d2 = self.decoder2(d2)
+        
         u1 = self.upconv1(d2)
-        d1 = torch.cat((u1, e1), dim=1)
+        e2_upsampled = nn.functional.interpolate(e2, size=(u1.size(2), u1.size(3)), mode='bilinear', align_corners=True)
+        d1 = torch.cat((u1, e2_upsampled), dim=1)
         d1 = self.decoder1(d1)
+        
+        u0 = self.upconv0(d1)
+        e1_upsampled = nn.functional.interpolate(e1, size=(u0.size(2), u0.size(3)), mode='bilinear', align_corners=True)
+        d0 = torch.cat((u0, e1_upsampled), dim=1)
+        d0 = self.decoder0(d0)
 
-        out = self.final_conv(d1)
+        out = self.final_conv(d0)
+
+        # Resize the output to match the target mask size
+        out = nn.functional.interpolate(out, size=(240, 320), mode='bilinear', align_corners=True)
+        
         return out
