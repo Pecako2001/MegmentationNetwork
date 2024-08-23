@@ -12,6 +12,7 @@ import argparse
 
 import numpy as np
 import matplotlib.pyplot as plt
+plt.use('Agg')
 import torchvision.transforms as T
 
 def get_args():
@@ -20,7 +21,7 @@ def get_args():
     parser.add_argument('--workers', type=int, default=4, help='Number of data loading workers')
     parser.add_argument('--batch_size', type=int, default=12, help='Input batch size')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train')
-    parser.add_argument('--optimizer', type=str, default='adam', help='Optimizer to use: adam, adamw or sgd')
+    parser.add_argument('--optimizer', type=str, default='adamw', help='Optimizer to use: adam, adamw or sgd')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate for the optimizer')
 
     return parser.parse_args()
@@ -128,6 +129,8 @@ def train_model(num_epochs, model, train_dataloader, validation_dataloader, crit
         if validation_loss < best_validation_loss:
             best_validation_loss = validation_loss
             torch.save(model.state_dict(), os.path.join(run_folder, 'best_model.pth'))
+        else:
+            torch.save(model.state_dict(), os.path.join(run_folder, 'last_model.pth'))
 
         # Save metrics to CSV
         utils.save_training_results(run_folder, epoch+1, epoch_loss, validation_loss, avg_iou, avg_precision, avg_recall, optimizer.param_groups[0]['lr'])
@@ -172,6 +175,7 @@ def main():
     # Fetch the first batch of images and masks
     images, masks = next(data_iter)
 
+    run_folder = utils.find_next_run_folder()
     # If you want to visualize a few images and masks
     for i in range(min(len(images), 4)):  # Visualize the first 4 images
         img = images[i].permute(1, 2, 0).numpy()  # Convert to HWC format
@@ -189,13 +193,10 @@ def main():
         plt.subplot(1, 2, 2)
         plt.imshow(mask, cmap="gray")
         plt.title("Mask")
-
-        plt.show()
+        plt.savefig(f"{run_folder}/sample_{i+1}.png")
 
     validation_dataset = PolygonSegmentationDataset(validation_image_dir, validation_annotation_dir, use_cache=True, use_augmentation=False)
     validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
-
-    run_folder = utils.find_next_run_folder()
 
     # Plot and save class distribution
     #utils.plot_class_distribution(train_dataset, run_folder, num_classes=len(class_names))
