@@ -38,21 +38,19 @@ def save_annotated_images(images, masks, predictions, save_dir='runs', epoch=0):
         col = i % grid_width
         original_grid_image[row * img_height:(row + 1) * img_height, col * img_width:(col + 1) * img_width] = img
 
-        # Apply color map to the mask (ensure masks are valid)
-        if masks[i].max() > 0:
-            mask = (masks[i] * 255 / masks[i].max()).astype(np.uint8)
-            mask = cv2.applyColorMap(mask, cv2.COLORMAP_JET)
-        else:
-            mask = np.zeros_like(img, dtype=np.uint8)
+        # Initialize a transparent mask
+        color_mask = np.zeros_like(img)
 
-        if predictions[i].max() > 0:
-            pred = (predictions[i] * 255 / predictions[i].max()).astype(np.uint8)
-            pred = cv2.applyColorMap(pred, cv2.COLORMAP_JET)
-        else:
-            pred = np.zeros_like(img, dtype=np.uint8)
+        # Apply color map to the prediction mask only (ensure masks are valid)
+        pred = predictions[i]
+        for cls in np.unique(pred):
+            if cls == 0:  # Skip background
+                continue
+            mask = (pred == cls).astype(np.uint8) * 255
+            colored_mask = cv2.applyColorMap(mask, cv2.COLORMAP_JET)
+            color_mask = np.where(mask[..., np.newaxis] == 255, colored_mask, color_mask)
 
-        # Overlay prediction on the original image
-        combined_img = cv2.addWeighted(img, 0.7, pred, 0.3, 0)
+        combined_img = cv2.addWeighted(img, 0.7, color_mask, 0.3, 0)
 
         # Place combined image in the grid
         grid_image[row * img_height:(row + 1) * img_height, col * img_width:(col + 1) * img_width] = combined_img
@@ -66,6 +64,8 @@ def save_annotated_images(images, masks, predictions, save_dir='runs', epoch=0):
     save_path = os.path.join(save_dir, f'validation_Epoch_{epoch}.png')
     cv2.imwrite(save_path, grid_image)
     print(f"Saved annotated image grid to {save_path}")
+
+
 
 def save_training_results(run_folder, epoch, epoch_loss, validation_loss, avg_iou, avg_precision, avg_recall, learning_rate):
     csv_path = os.path.join(run_folder, 'results.csv')

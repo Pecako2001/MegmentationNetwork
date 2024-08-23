@@ -117,7 +117,7 @@ class PolygonSegmentationDataset(Dataset):
     def __getitem__(self, idx):
         image_path, annotation = self.annotations[idx]
         image, mask = self._load_image_and_mask(image_path, annotation)
-        
+        # TODO add albumentations
         # Load and process the image
         image = cv2.imread(image_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -133,7 +133,8 @@ class PolygonSegmentationDataset(Dataset):
         
         return image, mask
 
-
+# TODO this is the old class with albumentations which did not work as expected
+# it loaded the files with the wrong colors, masks where correct
 # class PolygonSegmentationDataset(Dataset):
 #     def __init__(self, image_dir, annotation_dir, transform=None, target_size=(320, 240), use_cache=True, use_augmentation=True, augmentation_probability=0.02):
 #         self.image_dir = image_dir

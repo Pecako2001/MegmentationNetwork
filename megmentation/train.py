@@ -4,7 +4,7 @@ import torch.optim as optim
 from torch.cuda.amp import GradScaler, autocast
 from torchmetrics import JaccardIndex, Precision, Recall
 from megmentation.dataset import PolygonSegmentationDataset
-from megmentation.model import BasicSegmentationModel
+from megmentation.model import TransferLearningSegmentationModel
 import megmentation.utils as utils
 import os, yaml
 import time
@@ -69,7 +69,7 @@ def validate_model(model, dataloader, criterion, device, run_folder, epoch=0):
 def train_model(num_epochs, model, train_dataloader, validation_dataloader, criterion, optimizer, device, run_folder):
     best_validation_loss = float('inf')
     scaler = GradScaler()
-    
+    print(model)
     # Initialize lists to store metrics for real-time plotting
     epoch_losses = []
     validation_losses = []
@@ -205,7 +205,7 @@ def main():
         utils.visualize_random_sample_grid(train_dataset, run_folder, grid_size=4, batch_num=i+1)
 
 
-    model = BasicSegmentationModel(num_classes=len(class_names)).to(device)
+    model = TransferLearningSegmentationModel(num_classes=len(class_names)).to(device)
     criterion = nn.CrossEntropyLoss()
 
     # Optimzier
